@@ -1,7 +1,10 @@
 [submodule "nanosoc_m0_soc"]
 	path = nanosoc_m0_soc
 	url = https://git.soton.ac.uk/soclabs/nanosoc-m0/nanosoc_m0_soc.git
-	branch = main
+	# Branch, not main: main's stage0 cannot build its boot ROM, and the flist
+	# consolidation this project needs lives on a branch of nanosoc_arch_tech
+	# below it. Move both to main once merged.
+	branch = fix/stage0-qspi-include-path
 [submodule "soctools_flow"]
 	path = soctools_flow
 	url = https://git.soton.ac.uk/soclabs/soctools_flow.git
