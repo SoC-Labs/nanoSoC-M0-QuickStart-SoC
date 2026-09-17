@@ -1,0 +1,17 @@
+# Project-root marker for soctools_flow/bin/project_setup.sh.
+#
+# That script (line 28-38 on soctools_flow main) locates the project by walking
+# UP from $PWD with `while true`, and its ONLY exit is finding this file:
+#
+#     SEARCH_DIR=`pwd`
+#     while true; do
+#         if [[ -f $SEARCH_DIR"/.slprojroot" ]]; then ... break
+#         else SEARCH_DIR=$SEARCH_DIR/.. ; fi
+#     done
+#
+# With no marker it never terminates - it appends "/.." forever and set_env.sh
+# hangs with no error. Nothing else in the ecosystem creates this file; the
+# other SoC Labs projects avoid the loop only because their soctools_flow is an
+# unversioned copy from the unmerged dm-set_env_updates branch. This project
+# uses soctools_flow main as a real submodule, so it needs the marker main asks
+# for. Content is ignored; presence is the whole contract.
