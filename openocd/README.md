@@ -168,45 +168,73 @@ takes the base gdb port.
 
 ## gdb and a `mem_ap` target — read this, do not assume it
 
-**The widely repeated claim is that OpenOCD serves no gdb port for a `mem_ap`,
-so you get telnet and tcl only. It is FALSE — checked on BOTH revisions in play
-on this bench, so it is not a version difference.**
+**A `mem_ap` target serves NO gdb port. You get telnet and tcl only.** That is the
+long-standing claim, it is correct, and it holds identically on both revisions in
+play on this bench.
 
-What the code actually says:
+**This entry previously said the opposite. It was wrong, and the way it was wrong
+is worth more than the answer.**
+
+The reasoning that produced the wrong answer was this, and every line of it is
+true:
 
 - `target_supports_gdb_connection()` is `!!type->get_gdb_reg_list &&
-  !!target->gdb_max_connections` (`src/target/target.c:1426-1433`).
-- `struct target_type mem_ap_target` **does** set
-  `.get_gdb_reg_list = mem_ap_get_gdb_reg_list` (`src/target/mem_ap.c:284`).
-- `gdb_max_connections` defaults to `1` (`src/target/target.c:5903`).
-- So a `mem_ap` **does** get a gdb server. The comment immediately above the
-  check — `/* skip targets that cannot handle a gdb connections (e.g. mem_ap) */`
-  (`src/server/gdb_server.c:3980`) — is stale and no longer describes the code
-  below it. That stale comment is the likeliest origin of the claim.
-- OpenOCD's own manual agrees: "It's possible to connect a GDB client to this
-  target … and a fake ARM core will be emulated to comply to GDB remote
-  protocol" (`doc/openocd.texi:5195-5201`).
+  !!target->gdb_max_connections` (`target.c:1470` on v0.12.0, `:1426` on dev).
+- `mem_ap_target` **does** set `.get_gdb_reg_list` (`mem_ap.c:285` / `:284`).
+- `gdb_max_connections` defaults to 1.
+- The comment above the check still reads `/* skip targets that cannot handle a
+  gdb connections (e.g. mem_ap) */` and no longer describes that check.
 
-Read on both revisions, in the same source tree at `/tmpdir/openocd-build/openocd`:
+All true. The predicate passes. **Nobody asked what runs next.**
 
-| revision | `.get_gdb_reg_list` set? | |
-|---|---|---|
-| `0.12.0+dev-g43441cd` (2026-07-28) | yes, `mem_ap.c:284` | the only build available on this workstation |
-| **`v0.12.0` (`9ea7f3d`)** | **yes, `mem_ap.c:285`** | **the revision the bench pins** |
+```c
+/* src/server/gdb_server.c, gdb_target_add_one() */
+if (!target_supports_gdb_connection(target)) {   /* mem_ap PASSES this */
+        LOG_DEBUG("skip gdb server for target %s", ...);
+        return ERROR_OK;
+}
+if (target->gdb_port_override) {
+        if (strcmp(target->gdb_port_override, "disabled") == 0) {
+                LOG_INFO("gdb port disabled");   /* <-- mem_ap RETURNS HERE */
+                return ERROR_OK;
+        }
+        ...
+}
+```
 
-`target_supports_gdb_connection()` has the same two-term form on both
-(`target.c:1426` on dev, `target.c:1470` on v0.12.0). `mem_ap.c` differs between
-them by 25 insertions and 26 deletions, none of which touch this.
+`mem_ap_target_create()` opts the target out five lines earlier than anyone
+looked:
 
-**So: a gdb port DOES appear, on the pinned revision as well as on master.**
-Check 6 below is still the command that settles it on any other build. When it appears,
-treat it with suspicion: the registers gdb shows you are a *fake emulated ARM
-core*, not this SoC's Cortex-M0. For real registers use `QS_TARGET=core`.
+```c
+/* src/target/mem_ap.c, mem_ap_target_create() */
+if (!target->gdb_port_override)
+        target->gdb_port_override = strdup("disabled");
+```
 
-On HAPS-SX this also changes what you should expect from `haps-openocd`: the
-bench README states that the gdb forwards carry nothing for `dap-only.cfg`. If
-your bench OpenOCD is a build where `mem_ap` gets a server, that forward does
-carry something — a fake core. Check 6 is how you find out which you have.
+**The two paths are distinguishable in any log**, which is how this was finally
+settled — by running OpenOCD rather than reading it:
+
+| log line | meaning |
+|---|---|
+| `skip gdb server for target ...` | the predicate failed |
+| `gdb port disabled` | the predicate passed, the override stopped it — **this is what mem_ap prints** |
+
+### Do not add `-gdb-max-connections 0`
+
+It makes the predicate false, so you take the *first* early return instead of the
+second. The port was already suppressed. It is redundant rather than wrong, which
+is worse in a config file: it reads as load-bearing to the next person.
+
+### The warning that is actually useful
+
+**Do not add `-gdb-port` to a `mem_ap` target expecting a usable debug session.**
+That is the only way to reach the trap, and it is opt-in. Forcing the port on does
+not merely give you fake registers: `mem_ap.c` declares `NUM_REGS` entries while
+`REG_EXIST(n)` is `((n) < 16)` (`mem_ap.c:201`, applied at `:228`), so everything
+above r15 is declared-but-absent, and `arm-none-eabi-gdb` 10.3 aborts on it.
+(Register mismatch read here; the gdb abort measured on the bench, not by me.)
+
+For real registers, use `QS_TARGET=core`.
 
 ---
 
@@ -441,33 +469,35 @@ This is the check that makes Check 3 mean anything.
 `0x410cc200`, the DRW is handing you the previous result and **every number in
 Check 3 is worthless**. Run this before believing a clean `qs_ident`.
 
-### Check 6 — does YOUR OpenOCD serve a gdb port for `mem_ap`
+### Check 6 — confirm the `mem_ap` gdb port is suppressed, and by which path
+
+The answer is settled (no port), so this check is no longer "which build do I
+have". It is here because the *reason* is what distinguishes a correct setup from
+a broken one, and the two reasons print different lines.
 
 ```bash
-openocd -f openocd/cfg/<board>.cfg -c init 2>&1 | grep -i 'gdb server'
+openocd -f openocd/cfg/<board>.cfg -c init 2>&1 | grep -iE 'gdb port disabled|skip gdb server|starting gdb server'
 ```
 
-Two possible proofs, both valid answers:
+Expected, for `QS_TARGET=mem`:
 
 ```
-Info : [nanosoc.mem] starting gdb server on 3333      # your build DOES serve one
+Info : gdb port disabled
 ```
 
-or nothing at all on that grep, in which case confirm the reason rather than
-assuming it:
+That is `mem_ap_target_create()` having set `gdb_port_override = "disabled"`, and
+it is the correct, healthy result.
 
-```bash
-openocd -d3 -f openocd/cfg/<board>.cfg -c init 2>&1 | grep -i 'skip gdb server'
-# Debug: ... [nanosoc.mem] skip gdb server
-```
+| what you see | what it means |
+|---|---|
+| `gdb port disabled` | correct — the override suppressed it |
+| `skip gdb server for target ...` | the supports-predicate failed instead. Something set `-gdb-max-connections 0`, or the target is not the one you think. Same outcome, different cause — find out which |
+| `starting gdb server on ...` | you have a `-gdb-port` on a `mem_ap`, or you are looking at the `cortex_m` target. For `QS_TARGET=both` this line is expected, for `cpu0` only |
+| none of the three | **you have measured nothing.** `init` probably did not complete; the absence of a gdb line is about your session, not about `mem_ap`. Check the exit status and the DPIDR line first |
 
-**How it fails:** if neither line appears, you have measured nothing — `init`
-probably did not complete, and the absence of a gdb line is about your session,
-not about `mem_ap`. Check the exit status and the DPIDR line first.
-
-Run this once per OpenOCD build you use, and write the answer down. The exact
-log strings are `src/server/gdb_server.c:3949` (`LOG_TARGET_INFO`, which prefixes
-`[<target name>] `) and `:3982`.
+**How this check can fail usefully:** run it with `QS_TARGET=core` and you should
+get `starting gdb server`. If `mem` and `core` both print the same line, the
+config is not selecting what you think it is.
 
 ### Check 7 — the intrusive one, only when you mean it
 
