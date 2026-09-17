@@ -42,10 +42,32 @@ echo -e "\033[1;32m=============================================="
 echo "   nanoSoC-M0 QuickStart Environment Setup"
 echo -e "==============================================\033[0m"
 
-# --- Submodules, via plain git ------------------------------------------------
+# --- Submodules, via plain git, WITHOUT clobbering work in progress -----------
+#
+# `git submodule update` checks out the RECORDED PIN. If a submodule is sitting
+# on a branch you are working on, and the superproject has not recorded that
+# branch's commit yet, a plain update silently reverts your checkout to the pin.
+# The commits survive on the branch; the working tree does not, and nothing says
+# so. This bit the author of this script, which is why it reads like this.
+#
+# So: initialise submodules that are ABSENT, and leave alone any that are
+# already checked out on a branch or carrying local modifications.
 echo -e "\n\033[1;34m--- Submodules ---\033[0m"
-git submodule update --init --recursive || {
-    echo -e "\033[1;31mSubmodule update failed.\033[0m"; popd > /dev/null; return 1 2>/dev/null || exit 1; }
+git submodule status --recursive 2>/dev/null | while read -r line; do
+    state="${line:0:1}"; path=$(echo "$line" | awk '{print $2}')
+    case "$state" in
+        -) echo "  init    $path"; git submodule update --init --recursive -- "$path" >/dev/null 2>&1 ;;
+        +) branch=$(git -C "$path" branch --show-current 2>/dev/null)
+           if [ -n "$branch" ]; then
+               echo -e "  \033[1;33mSKIP    $path -- on branch '$branch', not at the recorded pin\033[0m"
+               echo    "          Leaving it alone. Commit and push it, then bump the pin."
+           else
+               echo -e "  \033[1;33mSKIP    $path -- detached at a commit that is not the pin\033[0m"
+           fi ;;
+        U) echo -e "  \033[1;31mCONFLICT $path -- resolve by hand\033[0m" ;;
+        *) echo "  ok      $path" ;;
+    esac
+done
 
 # --- Skip the template's sub-repo checkout ------------------------------------
 # project_setup.sh only runs subrepo_checkout.py when .socinit is absent.
