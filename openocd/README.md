@@ -155,8 +155,8 @@ takes the base gdb port.
 ## gdb and a `mem_ap` target — read this, do not assume it
 
 **The widely repeated claim is that OpenOCD serves no gdb port for a `mem_ap`,
-so you get telnet and tcl only. That is FALSE on at least one 0.12 build, and it
-is false on the build used to write this file.**
+so you get telnet and tcl only. It is FALSE — checked on BOTH revisions in play
+on this bench, so it is not a version difference.**
 
 What the code actually says:
 
@@ -173,11 +173,19 @@ What the code actually says:
   target … and a fake ARM core will be emulated to comply to GDB remote
   protocol" (`doc/openocd.texi:5195-5201`).
 
-Measured against `0.12.0+dev-g43441cd (2026-07-28)`, source read at
-`/tmpdir/openocd-build/openocd`.
+Read on both revisions, in the same source tree at `/tmpdir/openocd-build/openocd`:
 
-**So: a gdb port may or may not appear, depending on your OpenOCD build.**
-Settle it on yours — the command is in Check 6 below. And when it does appear,
+| revision | `.get_gdb_reg_list` set? | |
+|---|---|---|
+| `0.12.0+dev-g43441cd` (2026-07-28) | yes, `mem_ap.c:284` | the tree this file was written against |
+| **`v0.12.0` (`9ea7f3d`)** | **yes, `mem_ap.c:285`** | **the revision the bench pins** |
+
+`target_supports_gdb_connection()` has the same two-term form on both
+(`target.c:1426` on dev, `target.c:1470` on v0.12.0). `mem_ap.c` differs between
+them by 25 insertions and 26 deletions, none of which touch this.
+
+**So: a gdb port DOES appear, on the pinned revision as well as on master.**
+Check 6 below is still the command that settles it on any other build. When it appears,
 treat it with suspicion: the registers gdb shows you are a *fake emulated ARM
 core*, not this SoC's Cortex-M0. For real registers use `QS_TARGET=core`.
 
