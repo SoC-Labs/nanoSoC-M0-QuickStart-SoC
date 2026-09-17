@@ -50,19 +50,33 @@ building unchanged.
 
 ---
 
-## Phase A — It builds with no AAA
+## Phase A — It builds with no AAA  *(RTL work done, build unproven)*
 
-1. Repo skeleton: config, submodules, `set_env.sh`, `flist/project/top.flist`. *(done)*
-2. Upstream: repoint the flists at `$(ARM_CORTEX_M0_DIR)` / `$(ARM_CORSTONE_101_DIR)`.
-3. Upstream: delete the `_qs` duplicates, `nanosoc_tb_qs.v` and the `QUICKSTART` branch.
-4. Confirm DMA stays out — `DMAC_0_TYPE` already defaults to 0 and the controller is
-   inside `generate if (DMAC_0_TYPE > 0)`, so no RTL work is needed.
+1. ~~Repo skeleton: config, submodules, `set_env.sh`, `flist/project/top.flist`.~~ **done**
+2. ~~Upstream: repoint the flists at `$(ARM_CORTEX_M0_DIR)` / `$(ARM_CORSTONE_101_DIR)`.~~ **done**
+   — `arch_tech f922cac`, `slcorem0_tech 0b657b2`, `slcorem0p_tech 4d1c280`.
+3. ~~Upstream: delete the `_qs` duplicates, `nanosoc_tb_qs.v` and the `QUICKSTART` branch.~~
+   **done** — eight duplicates, not the six first counted.
+4. ~~Confirm DMA stays out.~~ **done** — `DMAC_0_TYPE` defaults to 0 and the controller is inside
+   a `generate` guard.
+5. **Remaining: run the build.** Nothing here has been elaborated yet.
+
+**Safety check, done:** each rewritten flist was normalised to absolute paths under the AAA roots
+and diffed against its previous revision — identical file sets, five for five. A make probe with
+the AAA project's config still resolves `ARM_CORTEX_M0_DIR` to
+`/research/AAA/ip_library/latest/Cortex-M0/logical`. This mattered because `nanosoc_arch_tech`,
+`slcorem0_tech` and `slcorem0p_tech` are each shared with `nanosoc-multicore-system`, which is in
+a tapeout lineage.
 
 **Gate A:** a firmware test runs to completion with `ARM_IP_LIBRARY_PATH` unset and only
-`ARM_QS_IP_DIR` set. Prove it can fail: unset `ARM_QS_IP_DIR` and confirm the build breaks
-rather than silently resolving files elsewhere.
+`ARM_QS_IP_DIR` set. Prove it can fail: unset `ARM_QS_IP_DIR` and confirm the build breaks rather
+than silently resolving files elsewhere.
 
-**Estimate:** 1 day.
+**Open, needs a decision:** `slcorem0p_tech/flist/cortexm0plus_ip_ASIC.flist` still hardcodes 69 Arm
+paths. Its root variable `ARM_CORTEX_M0PLUS_DIR` is set only by the slcorem0p tech makefile, not by
+the top makefile that drives the ASIC chain, so repointing it would break `slcorem0p_ASIC` — and
+neither `Cortex-M0plus/` nor `Cortex-M0plus-QS/` exists on this host to test against. Irrelevant to
+this M0 project; left as found.
 
 ## Phase B — It debugs over SWD
 
@@ -97,17 +111,42 @@ returning stale data. That check is why step 1 comes first.
 
 ## Phase D — FPGA
 
-Targets, in order of existing support:
+**Corrected after survey. The earlier estimate was wrong by an order of magnitude on HAPS-SX.**
 
-1. **PYNQ-Z2** — target exists upstream (`fpga/fpga/targets/pynq_z2`), Vivado 2021.1.
-2. **KR260** — target exists (`targets/pynq_kr260`), Vivado 2021.1 and 2024.1.
-3. **HAPS-SX** — **new work.** No HAPS target exists upstream; port from
-   `HAPS-work/fpga/haps-sx`, which already carries constraints, HOSTIO and OpenOCD
-   plumbing for this bench.
+`flist/project/top_FPGA.flist` did not exist in this lineage, although `arch_tech makefile:247` has
+always referenced it as `DESIGN_VC_FPGA`. So no FPGA target has ever built here, on any board —
+the target directories were inherited, the project hook to reach them was not. Added in `7597136`,
+still unproven by a build.
+
+1. **PYNQ-Z2** — 0.5–1 day. Target exists; build it once to prove `package_socket` +
+   `package_nanosoc` + `build_design.tcl` work in this repo. Cheapest possible FPGA proof.
+2. **KR260** — 0.5–1 day. Target exists for 2021_1 and 2024_1. Build with `VIVIADO_VERSION=2024_1`:
+   the `2021_1` directory holds a 2024.1-shaped script (it instantiates `zynq_ultra_ps_e:3.5` with
+   its version guard commented out).
+3. **HAPS-SX** — **11–14 days realistic**, not the 3–4 first budgeted.
+
+**Why HAPS-SX is not a fourth target directory.** `build_design.tcl` is unconditionally a Zynq PS
+block-design flow: `create_bd_design`, `create_root_design`, project mode, `write_hw_platform`.
+Every existing `nanosoc_design.tcl` instantiates a hard PS and hangs the whole host-access path off
+its AXI master. The VU19P has no PS. HAPS-SX needs a board top with real pads and a non-project
+Vivado flow — which already exists at `HAPS-work/fpga/haps-sx` and should be branched, not rebuilt.
+Recommend shipping it as a sibling tree with its own Makefile and folding it into
+`makefile.targets` later, if ever.
+
+**Do not port `fpga_timing.xdc`.** Nothing references it — zero grep hits across arch_tech — and it
+constrains ports that do not exist (`XTAL1`, `SWCLKTCK`, `P0[]`, `P1[]`, against a wrapper whose
+entire port list is `PMOD0_0..7`). The PYNQ builds run with no timing constraints at all. The
+HAPS-SX flow is the opposite: its XDC is regenerated every run and the build errors on any
+unplaced port.
+
+**Two silent failures to settle from RTL before writing the board top** — both are being checked
+now, results in `docs/haps-sx-derisk.md`:
+- `FT1248MODE` is a real pad bit (`build_soc/rtl/nanosoc.sv:1057` wires it to `p1_in[7]`) and
+  HAPS-SX gives it no pad. Wrong strap means HOSTIO answers nothing, with no other symptom.
+- `IMEM_0_RAM_PRELOAD` defaults to 0, meaning "ADP load". On PYNQ that ADP comes from
+  `pynq.MMIO` on the PS. There is no MMIO on HAPS-SX.
 
 **Gate D:** per board, firmware runs from boot ROM and OpenOCD attaches over SWD.
-
-**Estimate:** 2 days for the two PYNQ-family boards, 3-4 days for HAPS-SX.
 
 ---
 
