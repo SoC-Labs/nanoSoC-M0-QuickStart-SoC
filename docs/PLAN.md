@@ -139,12 +139,42 @@ entire port list is `PMOD0_0..7`). The PYNQ builds run with no timing constraint
 HAPS-SX flow is the opposite: its XDC is regenerated every run and the build errors on any
 unplaced port.
 
-**Two silent failures to settle from RTL before writing the board top** — both are being checked
-now, results in `docs/haps-sx-derisk.md`:
-- `FT1248MODE` is a real pad bit (`build_soc/rtl/nanosoc.sv:1057` wires it to `p1_in[7]`) and
-  HAPS-SX gives it no pad. Wrong strap means HOSTIO answers nothing, with no other symptom.
-- `IMEM_0_RAM_PRELOAD` defaults to 0, meaning "ADP load". On PYNQ that ADP comes from
-  `pynq.MMIO` on the PS. There is no MMIO on HAPS-SX.
+**Both silent failures are now settled from RTL** — full working in `docs/haps-sx-derisk.md`:
+- **`FT1248MODE`: the trap is real, and worse than described.** Polarity is `1` = FT1248/UART2,
+  `0` = EXTIO 8x4 (`nanosoc_ss_hostio4.v:111-113`). Nothing inside the SoC straps it —
+  `nanosoc.sv:1057` takes it straight off `p1_in[7]` — and the FPGA reference wrapper ties it to
+  **`1'b1`, the opposite of what HOSTIO4 needs** (`pynq/vivado_ip/nanosoc_vivado_wrapper.v:156`).
+  No pull exists on any P1 pad, so undriven is indeterminate. **The board top must drive it, and it
+  should be a port or parameter, not a hard tie** — see the UART note below.
+- **`IMEM_0_RAM_PRELOAD` is INERT, so the IMEM risk was misdiagnosed** (mine — the parameter reads
+  convincingly). The RTL branches on `` `ifdef RAM_PRELOAD ``, a *different* symbol
+  (`nanosoc_region_imem.v:39`); `IMEM_0_RAM_PRELOAD` appears once in `nanosoc.sv` as a declaration
+  and is never passed down; and `nanosoc_soc_config.vh` is included by no RTL file at all.
+  `RAM_PRELOAD` is already defined unconditionally in `system/src/defines/gen_defines.v`. It selects
+  `sl_fpga_rom_word`, which despite the name is a **writable BRAM** with `$readmemh` preload.
+
+**IMEM load paths, ranked** — the risk is much lower than budgeted:
+1. **SWD** — least work. IMEM is writable through the DAP, and `nanosoc_dap_hal/loader.py` already
+   defaults to `load_addr=0x10000000`.
+2. **Bitstream preload** — scripted, but costs a full XCVU19P place-and-route per firmware change.
+3. **HOSTIO4/ADP** — RTL path is complete, but nothing in-tree drives ADP over HOSTIO4 today; PYNQ
+   reaches ADP via `pynq.MMIO` on the PS, which does not transfer.
+
+**Three further findings that change the board top:**
+- **`alt_mode` and `swd_mode` gate nothing.** Both are dangling inputs in both `nanosoc_chip.v`
+  copies. The three conflicting postures in the tree are all equally irrelevant. Working SWD comes
+  from `cpu_0_swd*` on the core top.
+- **Instantiate `nanosoc`, not `nanosoc_chip`**, and copy `pynq/vivado_ip/nanosoc_vivado_wrapper.v`
+  — the only integration level exercised on hardware. Regenerating `nanosoc_chip` is actively
+  hazardous: the current template ties `swdio_o/e/z` inert and expects a `dap_*` port group this
+  SoC's YAML does not define, so `make soc_model` would produce a chip with no external debug path.
+- **UART and HOSTIO4 are mutually exclusive.** In EXTIO mode UART2's RX is an internal loopback of
+  its own TX (`nanosoc_ss_hostio4.v:214`). Bring up once with `p1_i[7]=1` and a 2-wire UART to get
+  stage-0's boot diagnostics, then flip to 0 for HOSTIO4.
+
+**Unrelated but load-bearing: IMEM is 16 KB, not the 64 KB the linker script and memmap claim.**
+`RAM_ADDR_W=14` is a byte width, so the memory builds 4096 words. An image between 16 KB and 64 KB
+links clean and aliases silently. Needs settling before any real firmware is built.
 
 **Gate D:** per board, firmware runs from boot ROM and OpenOCD attaches over SWD.
 
