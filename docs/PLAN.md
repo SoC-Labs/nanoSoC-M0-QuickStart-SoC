@@ -68,9 +68,37 @@ the AAA project's config still resolves `ARM_CORTEX_M0_DIR` to
 `slcorem0_tech` and `slcorem0p_tech` are each shared with `nanosoc-multicore-system`, which is in
 a tapeout lineage.
 
-**Gate A:** a firmware test runs to completion with `ARM_IP_LIBRARY_PATH` unset and only
-`ARM_QS_IP_DIR` set. Prove it can fail: unset `ARM_QS_IP_DIR` and confirm the build breaks rather
-than silently resolving files elsewhere.
+**Gate A — PASSED 2026-09-17, on a clean clone from GitHub, by a shell that never saw this
+working tree.** `ARM_IP_LIBRARY_PATH` was unset; only `ARM_QS_IP_DIR` was set:
+
+```
+git clone …/nanoSoC-M0-QuickStart-SoC   rc=0
+source ./set_env.sh                     rc=0
+make bootrom                            rc=0
+filelist_checker                        0 errors
+Arm IP references                       97, ALL under ip_library/latest/Cortex-M0-QS
+AAA references                          0
+```
+
+**It can fail.** With `ARM_QS_IP_DIR=/nonexistent/quickstart` the flow refuses: `make` returns 2,
+no `tbench.vc` is produced at all, and the error names the directory it could not find. (The first
+attempt at this negative control was itself broken — it deleted the wrong file and discarded the
+exit code, so it read a stale `tbench.vc` and reported a pass. Green on prior state, while writing
+the check meant to catch exactly that.)
+
+**Three defects had to be fixed to get here, all of them pre-existing:**
+- `nanosoc_m0_soc` main cannot build its boot ROM. Its tip commit added
+  `#include "qspi_flash.h"` to stage0 without putting that directory on the include path — and
+  the CMakeLists that claims to mirror the makefile mirrors the omission too.
+- The boot ROM size exists twice and had diverged 8×: RTL `BOOTROM_ADDR_W = 11` (8 KB) against
+  flow `BOOTROM_ADDRW ?= 8` (1 KB), names differing by one underscore. It must be **exported**,
+  because the `bootrom` target recurses into a standalone makefile that never reads the project
+  config.
+- `set_env.sh` hung forever on a clean clone with no error at all.
+  `soctools_flow/bin/project_setup.sh:28-38` walks up from `$PWD` in a `while true` whose only
+  exit is finding a `.slprojroot` marker; with none it appends `/..` without bound. No other SoC
+  Labs project has that marker either — they avoid the loop only because their `soctools_flow` is
+  an unversioned copy of an unmerged branch rather than a submodule of main.
 
 **Open, needs a decision:** `slcorem0p_tech/flist/cortexm0plus_ip_ASIC.flist` still hardcodes 69 Arm
 paths. Its root variable `ARM_CORTEX_M0PLUS_DIR` is set only by the slcorem0p tech makefile, not by
