@@ -1,7 +1,6 @@
 # Generated design — regenerate with `make soc`, never commit
 build/
 build_soc/
-autoconfig
 .socinit
 
 # Tool droppings

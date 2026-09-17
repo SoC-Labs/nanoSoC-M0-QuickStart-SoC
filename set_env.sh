@@ -1,105 +1,78 @@
 #!/bin/bash
 #-----------------------------------------------------------------------------
-# SoC Labs Environment Setup Script
-# Builds with Arm Quickstart IP only - no AAA licence required.
+# nanoSoC-M0 QuickStart — environment setup
 #
-# Contributors
-#
-# David Mapstone (d.a.mapstone@soton.ac.uk)
-#
-# Copyright  2023-6, SoC Labs (www.soclabs.org)
+# Copyright (C) 2026, SoC Labs (www.soclabs.org)
 #-----------------------------------------------------------------------------
-# Description:
-# This script sets up the environment for the nanoSoC-M0 QuickStart project. It
-# configures necessary paths, tools, and project-specific settings.
-# The terminal echos are printed in different colours for visibility.
-# The steps for this process are as follows:
-# 1. Set the script directory as the working directory. If this is being
-#    sourced from a different directory, it saves the current directory
-#    and returns to it at the end.
-#    It uses the script directory as the top-level of the project.
-# 2. If the unset flag (--unset) is provided as an argument, it removes
-#    configuration files (autoconfig, .socinit) and exits.
-# 3. Source the set_env script from soctools_flow to configure the environment.
-# 4. Sets up the system configuration by sourcing and running the
-#    autoconfig_setup.sh script, which detects and configures development
-#    tools like ARM toolchains and HDL simulators.
-# 5. Runs init_repos.sh to initialize all sub-repositories.
-# 6. Generates file lists for simulation.
+# Usage:  source set_env.sh  [--unset]
+#
+# Deliberately simpler than the SoC Labs project template, for two reasons that
+# are not stylistic:
+#
+# 1. NO subrepo_checkout.py. The template's project_setup.sh runs it on first
+#    use, and it does `git checkout --recurse-submodules <branch>` followed by
+#    `git pull` in every sub-repo (subrepo_checkout.py:44-48). This project uses
+#    ordinary git submodules, so that would move them off whatever you have
+#    checked out -- including a feature branch you are mid-way through -- and
+#    silently revert your working tree to the recorded pins. We create .socinit
+#    ourselves to skip it, and use `git submodule update --init --recursive`,
+#    which does the same job without moving branches you did not ask it to move.
+#
+# 2. NO autoconfig_setup.sh. That script probes $PATH for a toolchain and a
+#    simulator and writes the two lines that end up in ./autoconfig. The probe
+#    is order-dependent -- the template's own set_env.sh carries a sed to undo
+#    it when it picks armclang over gcc -- and it lives only on the unmerged
+#    soctools_flow branch `dm-set_env_updates`, not on main. So autoconfig is a
+#    committed file here. Override either value from the environment.
 #-----------------------------------------------------------------------------
 
-echo -e "\033[1;32m==============================================="
-echo "   nanoSoC-M0 QuickStart Environment Setup"
-echo -e "===============================================\033[0m"
-
-# Save current directory and change to script directory
-pushd . > /dev/null
-
-# Change the colour of the terminal output for visibility
-echo -e "\n\033[1;34m-----------------------------------------------"
-echo "Locating set_env script directory"
-echo -e "-----------------------------------------------\033[0m"
-
-# The script directory is the top-level of the project
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-cd $SCRIPT_DIR
-echo "Running set_env: $SCRIPT_DIR/set_env.sh"
+pushd . > /dev/null
+cd "$SCRIPT_DIR"
 
-# Check to see if the unset flag has been provided
-if [[ "$1" != "--unset" ]]; then
-    # Source the project setup script
-    echo -e "\n\033[1;34m-----------------------------------------------"
-    echo "Sourcing SoC Labs Project Setup Script"
-    echo -e "-----------------------------------------------\033[0m"
-    source soctools_flow/bin/project_setup.sh $@
-
-    # Source and run autoconfig setup
-    echo -e "\n\033[1;34m-----------------------------------------------"
-    echo "Setting up System Configuration"
-    echo -e "-----------------------------------------------\033[0m"
-    source soctools_flow/bin/autoconfig_setup.sh
-    setup_all
-
-    # If TOOL_CHAIN was set in the environment before set_env.sh was sourced,
-    # override autoconfig so downstream make targets (e.g. bootrom) use it.
-    # This is needed because autoconfig_setup.sh probes the PATH for compilers
-    # in non-deterministic order and may select armclang instead of gcc.
-    if [ -n "$TOOL_CHAIN" ]; then
-        sed -i "s/^TOOL_CHAIN.*/TOOL_CHAIN = $TOOL_CHAIN/" autoconfig
-    fi
-fi
-
-# Run the init_repos script to initialize subrepositories
-source soctools_flow/bin/init_repos.sh $@
-
-# Generate file lists for simulation
-if [[ "$1" != "--unset" ]]; then
-    echo -e "\n\033[1;34m-----------------------------------------------"
-    echo "Generating File Lists for Simulation"
-    echo -e "-----------------------------------------------\033[0m"
-    make -C nanosoc_m0_soc/nanosoc_arch_tech flist_vfiles_nanosoc
-
-    # Run the filelist checker to ensure all files exist
-    echo -e "\n\033[1;34m-----------------------------------------------"
-    echo "Check filelists to ensure all files exist"
-    echo -e "-----------------------------------------------\033[0m"
-    python $SOCLABS_SOCTOOLS_FLOW_DIR/bin/filelist_checker.py -i $SOCLABS_PROJECT_DIR/simulate/sim/hello/tbench.vc
-else
-    # Change the terminal output colour for visibility to Red
-    echo -e "\n\033[1;31m-----------------------------------------------"
-    echo "Unset flag (--unset) provided. Removing environment configuration files."
-    echo -e "-----------------------------------------------\033[0m"
-
-    # Remove Configuration files
-    rm -f autoconfig
+if [[ "$1" == "--unset" ]]; then
+    echo -e "\033[1;31m--- Removing environment configuration ---\033[0m"
     rm -f .socinit
-
-    echo "Environment unset completed."
-    echo "The following files have been removed if they existed:"
-    echo " - autoconfig"
-    echo " - .socinit"
-    echo -e "\033[0m"
+    echo "Removed .socinit. autoconfig is committed and is left alone."
+    popd > /dev/null
+    return 0 2>/dev/null || exit 0
 fi
 
-# Return to the directory the script was sourced from
+echo -e "\033[1;32m=============================================="
+echo "   nanoSoC-M0 QuickStart Environment Setup"
+echo -e "==============================================\033[0m"
+
+# --- Submodules, via plain git ------------------------------------------------
+echo -e "\n\033[1;34m--- Submodules ---\033[0m"
+git submodule update --init --recursive || {
+    echo -e "\033[1;31mSubmodule update failed.\033[0m"; popd > /dev/null; return 1 2>/dev/null || exit 1; }
+
+# --- Skip the template's sub-repo checkout ------------------------------------
+# project_setup.sh only runs subrepo_checkout.py when .socinit is absent.
+if [ ! -f .socinit ]; then
+    echo "Skipping subrepo_checkout.py -- this project uses git submodules." > .socinit
+fi
+
+# --- Project environment ------------------------------------------------------
+echo -e "\n\033[1;34m--- Project environment ---\033[0m"
+source soctools_flow/bin/project_setup.sh
+
+# --- Arm Quickstart IP --------------------------------------------------------
+echo -e "\n\033[1;34m--- Arm Quickstart IP ---\033[0m"
+if [ -z "$ARM_QS_IP_DIR" ] && [ -z "$ARM_IP_LIBRARY_PATH" ]; then
+    echo -e "\033[1;31mNeither ARM_QS_IP_DIR nor ARM_IP_LIBRARY_PATH is set.\033[0m"
+    echo "Set ARM_QS_IP_DIR to your unpacked Cortex-M0 Quickstart download."
+    echo "It must contain Cortex-M0-logical/ and Corstone-101-logical/."
+else
+    QS_ROOT="${ARM_QS_IP_DIR:-$ARM_IP_LIBRARY_PATH/latest/Cortex-M0-QS}"
+    for d in Cortex-M0-logical Corstone-101-logical; do
+        if [ -d "$QS_ROOT/$d" ]; then echo "  found  $QS_ROOT/$d"
+        else echo -e "  \033[1;31mMISSING $QS_ROOT/$d\033[0m"; fi
+    done
+fi
+
+# --- Filelists ----------------------------------------------------------------
+echo -e "\n\033[1;34m--- Generating filelists ---\033[0m"
+make -C nanosoc_m0_soc/nanosoc_arch_tech flist_vfiles_nanosoc
+
 popd > /dev/null

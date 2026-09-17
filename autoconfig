@@ -1,0 +1,6 @@
+# Toolchain and simulator. Committed rather than probed: the template's
+# autoconfig_setup.sh picks these by scanning $PATH in a non-deterministic
+# order, and lives only on an unmerged soctools_flow branch.
+# Override from the environment, e.g.  TOOL_CHAIN=armclang source set_env.sh
+TOOL_CHAIN = gcc
+SIMULATOR = vcs
