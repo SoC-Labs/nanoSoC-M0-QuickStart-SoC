@@ -1,0 +1,13 @@
+# Generated design — regenerate with `make soc`, never commit
+build/
+build_soc/
+autoconfig
+.socinit
+
+# Tool droppings
+*.log
+*.jou
+*.backup.jou
+sim_build/
+__pycache__/
+*.pyc

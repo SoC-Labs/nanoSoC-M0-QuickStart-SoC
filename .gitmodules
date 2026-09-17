@@ -1,0 +1,20 @@
+[submodule "nanosoc_m0_soc"]
+	path = nanosoc_m0_soc
+	url = https://git.soton.ac.uk/soclabs/nanosoc-m0/nanosoc_m0_soc.git
+	branch = main
+[submodule "soctools_flow"]
+	path = soctools_flow
+	url = https://git.soton.ac.uk/soclabs/soctools_flow.git
+	branch = main
+[submodule "generic_lib_tech"]
+	path = generic_lib_tech
+	url = https://git.soton.ac.uk/soclabs/generic_lib_tech.git
+	branch = main
+[submodule "fpga_lib_tech"]
+	path = fpga_lib_tech
+	url = https://git.soton.ac.uk/soclabs/fpga_lib_tech.git
+	branch = main
+[submodule "rtl_primitives_tech"]
+	path = rtl_primitives_tech
+	url = https://git.soton.ac.uk/soclabs/rtl_primitives_tech.git
+	branch = main
