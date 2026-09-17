@@ -168,9 +168,16 @@ unplaced port.
   — the only integration level exercised on hardware. Regenerating `nanosoc_chip` is actively
   hazardous: the current template ties `swdio_o/e/z` inert and expects a `dap_*` port group this
   SoC's YAML does not define, so `make soc_model` would produce a chip with no external debug path.
-- **UART and HOSTIO4 are mutually exclusive.** In EXTIO mode UART2's RX is an internal loopback of
-  its own TX (`nanosoc_ss_hostio4.v:214`). Bring up once with `p1_i[7]=1` and a 2-wire UART to get
-  stage-0's boot diagnostics, then flip to 0 for HOSTIO4.
+- **UART and HOSTIO4 are mutually exclusive, and there is no second UART to fall back on.** In
+  EXTIO mode UART2's RX is an internal loopback of its own TX (`nanosoc_ss_hostio4.v:214`), so the
+  only UART that reaches a pad does so through the HOSTIO4 mux on `P1[4]`/`P1[5]`, and only when
+  `FT1248MODE=1`. The chip-level `uart_rxd_i`/`uart_txd_o` ports are **declared and never driven** —
+  the sole assignment is commented out at `chip/chip/verilog/nanosoc_chip.v:123`, and it was a
+  loopback anyway; `nanosoc.sv` has no UART ports at all. *(The multicore design does have an
+  independent console UART on dedicated pins, belonging to its ethernet subsystem. That does not
+  transfer to this SoC — do not assume a console survives EXTIO mode here.)*
+  Bring up once with `p1_i[7]=1` and a 2-wire UART to get stage-0's boot diagnostics, then flip to
+  0 for HOSTIO4.
 
 **Unrelated but load-bearing: IMEM is 16 KB, not the 64 KB the linker script and memmap claim.**
 `RAM_ADDR_W=14` is a byte width, so the memory builds 4096 words. An image between 16 KB and 64 KB

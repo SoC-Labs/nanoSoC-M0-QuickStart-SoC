@@ -1,5 +1,19 @@
 # OpenOCD for the nanoSoC-M0 QuickStart SoC
 
+> **Which OpenOCD these configs are for — and the gap in that claim.**
+> They are **written for v0.12.0 (`9ea7f3d`)**, the revision the HAPS bench pins
+> (haps-dev runs `0.12.0` from `/usr/local/bin/openocd`).
+> They have **never been parsed by a v0.12.0 binary.** Every config here was
+> parsed against `0.12.0+dev-g43441cd`, because that is the only OpenOCD built on
+> this workstation. Line numbers quoted in comments are from that dev tree unless
+> a v0.12.0 line is given beside them.
+>
+> So these configs are validated against something *adjacent* to what ships. If a
+> stanza fails to parse on the pinned build, that is this gap, not your setup —
+> please report it. Re-parsing against the shared v0.12.0 build, once one exists
+> at a path reachable from wherever OpenOCD actually runs, is a tracked step of
+> the driver-integration recipe.
+
 Start here:
 
 ```bash
@@ -177,7 +191,7 @@ Read on both revisions, in the same source tree at `/tmpdir/openocd-build/openoc
 
 | revision | `.get_gdb_reg_list` set? | |
 |---|---|---|
-| `0.12.0+dev-g43441cd` (2026-07-28) | yes, `mem_ap.c:284` | the tree this file was written against |
+| `0.12.0+dev-g43441cd` (2026-07-28) | yes, `mem_ap.c:284` | the only build available on this workstation |
 | **`v0.12.0` (`9ea7f3d`)** | **yes, `mem_ap.c:285`** | **the revision the bench pins** |
 
 `target_supports_gdb_connection()` has the same two-term form on both
