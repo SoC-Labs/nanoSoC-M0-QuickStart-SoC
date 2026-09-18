@@ -1,18 +1,29 @@
 # OpenOCD for the nanoSoC-M0 QuickStart SoC
 
-> **Which OpenOCD these configs are for — and the gap in that claim.**
-> They are **written for v0.12.0 (`9ea7f3d`)**, the revision the HAPS bench pins
-> (haps-dev runs `0.12.0` from `/usr/local/bin/openocd`).
-> They have **never been parsed by a v0.12.0 binary.** Every config here was
-> parsed against `0.12.0+dev-g43441cd`, because that is the only OpenOCD built on
-> this workstation. Line numbers quoted in comments are from that dev tree unless
-> a v0.12.0 line is given beside them.
+> **Which OpenOCD these configs are for — and the evidence.**
+> They are written for **v0.12.0 (`9ea7f3d`)**, the revision the HAPS bench pins,
+> and as of 2026-09-18 they have been **parsed against it**, on
+> `haps-dev:/opt/soclabs-openocd/0.12.0-soclabs/bin/openocd`:
 >
-> So these configs are validated against something *adjacent* to what ships. If a
-> stanza fails to parse on the pinned build, that is this gap, not your setup —
-> please report it. Re-parsing against the shared v0.12.0 build, once one exists
-> at a path reachable from wherever OpenOCD actually runs, is a tracked step of
-> the driver-integration recipe.
+> | config | `QS_TARGET` | result |
+> |---|---|---|
+> | `pynq-z2.cfg` | mem / core / both | PARSE-OK, all three |
+> | `kr260.cfg` | mem | PARSE-OK |
+> | `haps-sx-mem.cfg`, `haps-sx-core.cfg` | — | **not exercised** |
+>
+> The two HAPS files are target-half-only by design: `haps-openocd` selects the
+> transport, and `swd` is not a valid command until `transport select swd` has
+> run, so a bare `-f` cannot work by construction. Running them that way reports
+> `invalid command name "swd"`, which is a harness error, not a config defect.
+> Exercise them through `haps-openocd`.
+>
+> **Provenance was recorded by command, not by banner.** The binary reports
+> `0.12.0-01004-g9ea7f3d64-dirty`, and a driverless build of the same pin prints
+> that identical string, so the banner cannot identify which binary you used.
+> `make verify HOST=haps-dev` can, and did.
+>
+> Line numbers quoted in comments are still from `0.12.0+dev-g43441cd` unless a
+> v0.12.0 line is given beside them; that is the only remaining split.
 
 Start here:
 
