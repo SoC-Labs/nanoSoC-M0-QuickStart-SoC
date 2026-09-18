@@ -106,6 +106,48 @@ the top makefile that drives the ASIC chain, so repointing it would break `slcor
 neither `Cortex-M0plus/` nor `Cortex-M0plus-QS/` exists on this host to test against. Irrelevant to
 this M0 project; left as found.
 
+## MILESTONE — firmware runs, and a bitstream builds (2026-09-18)
+
+Both halves of "it works" are now evidenced, on a design containing no Academic Access IP.
+
+**Simulation — the SoC boots and runs a test to completion.**
+
+```
+   6 ns  E RESET
+ 276 ns  R r13 1800fc00 (MSP)          initial SP from the vector table
+ 286 ns  MR4_D 00000004 08000189       reset vector
+ 306 ns  MR4_I 08000188 4a0b490a       first fetch, in the boot ROM at 0x08000000
+   ...   644,731 instructions traced
+[ADP]  SoCLabs NanoSoC'25 ARM-CM0+ADP+EXTIO-DMA 20250412
+[ADP]  REMAP->IMEM0
+[ADP]  Hello world
+[ADP]  ** TEST PASSED **
+$stop at time 7,756,765 ns
+```
+
+stage0 executes from ROM, ADP uploads the image in 50 chunks, REMAP switches to IMEM0, and the
+application runs. Three separate fixes had to all be right for the first fetch to happen at all:
+the stage0 driver include path, the `BOOTROM_ADDRW` size mismatch, and the QSPI guard.
+
+**FPGA — PYNQ-Z2 bitstream, timing clean.**
+
+```
+.bit          4,045,682 bytes
+WNS   +16.789 ns   0 / 12111 failing
+WHS    +0.022 ns   0 / 12111 failing
+WPWS  +18.750 ns   0 /  4732 failing
+              "All user specified timing constraints are met"
+              7416 LUTs (13.94 %), 4687 FFs, CORTEXM0 present
+```
+
+Read WNS as internal-logic margin only: just the BD's 25 MHz clock is constrained, because
+`fpga_timing.xdc` is dead in this flow.
+
+**Not proven by either:** no SWD on the PYNQ bitstream (the block design ties `swdio_tri_i`,
+`swdclk_i` and `swd_mode` to a constant), no I/O timing signoff, and nothing on hardware.
+
+---
+
 ## Phase B — It debugs over SWD
 
 1. `mem_ap` target. No RTL: the M0 DAP's AP is a conformant AHB-AP, `IDR 0x04770021`.
